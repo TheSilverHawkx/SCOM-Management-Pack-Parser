@@ -1,11 +1,17 @@
 Param (
-    [Parameter(Valuefrompipeline)]
+    [Parameter(Position = 0, Mandatory = $true,ParameterSetName= "FileScenario", Valuefrompipeline)]
     [string[]]$File,
+    [Parameter(Position = 0, Mandatory = $true,ParameterSetName= "FolderScenario")]
     [string]$Folder,
-    [string]$OutputFolder = "C:\temp\",
-    [Parameter(Mandatory)]
+
+    [Parameter(Position = 1, Mandatory = $true,ParameterSetName= "FileScenario")]
+    [Parameter(Position = 1,ParameterSetName= "FolderScenario")]
     [ValidateSet("Report","Table","CheckList")]
-    [string]$Mode = "Report"
+    [string]$Mode = "Report",
+
+    [Parameter(Position = 2, ParameterSetName= "FileScenario")]
+    [Parameter(Position = 2, ParameterSetName= "FolderScenario")]
+    [string]$OutputFolder = "C:\temp\"
 )
 function parseExpression {
     Param (
@@ -14,10 +20,9 @@ function parseExpression {
         [string]$output = ""
     )
 
-    #write-host $Node.LocalName
     if ($Node.FirstChild.LocalName -in @("And","Or")) {
         $output += "("
-        $Node.FirstChild.ChildNodes | % {
+        $Node.FirstChild.ChildNodes | ForEach-Object {
             $output = (parseExpression -Node $_ -logicOperand $Node.FirstChild.LocalName -output $output)
         }
         if ($output -match ".*$($Node.FirstChild.LocalName) $") {
@@ -34,13 +39,13 @@ function parseExpression {
         return $output
     }
     elseif ($Node.LocalName -eq "Contains") {
-        $node.ChildNodes | % {
+        $node.ChildNodes | ForEach-Object {
             $output += "$($Node.LocalName) ($($_.LocalName)) $($_.innerText)"
         }
         return $output
     }
     else {
-        if ($node.SelectSingleNode("./Operator") -ne $null) {
+        if ($null -ne $node.SelectSingleNode("./Operator")) {
             $operator = $Node.Operator 
         }
         else {
@@ -100,7 +105,6 @@ function parseModule {
     }
     return $module_list
 }
-
 function parseMembershipRule {
     Param (
         [System.Xml.XmlElement[]]$Rule
@@ -119,7 +123,6 @@ function parseMembershipRule {
 
     return $configuration
 }
-
 function isSpecialCase($name) {
 
     if ($name -like "*Expression*") {
@@ -132,7 +135,6 @@ function isSpecialCase($name) {
         return $false
     }
 }
-
 function handleSpecialCases {
     Param (
         [Hashtable]$Configuration = @{},
@@ -186,12 +188,10 @@ function handleSpecialCases {
         $configuration.Add($location.LocalName,"Not Implemented")
     }
 }
-
 function write-report($text) {
     
     "$text" | Out-File -Append -FilePath $OutputFile 
 }
-
 function printHirarchy {
     Param (
         [object]$Node,
@@ -217,7 +217,7 @@ function printHirarchy {
 
                 $offset++
 
-                $discovery.Configuration.keys | % {
+                $discovery.Configuration.keys | ForEach-Object {
                     if ($_ -eq "Files") {
                         write-report "$("`t" * ($BaseLevel + $offset))$($_): $(([xml]$discovery.Configuration["$_"]).File.Name)"
                     } elseif ($_ -eq "InstanceSettings") {
@@ -225,7 +225,7 @@ function printHirarchy {
                         $a = $_
 
                         $offset++
-                        $Discovery.Configuration["$_"].keys | % {
+                        $Discovery.Configuration["$_"].keys | ForEach-Object {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_): $($Discovery.Configuration["$a"]["$_"]) "
                         }
                         $offset--
@@ -239,7 +239,7 @@ function printHirarchy {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_) $($Counter):"
                             $offset++
                         
-                            $rule.keys | % {
+                            $rule.keys | ForEach-Object {
                                 write-report "$("`t" * ($BaseLevel + $offset))$($_): $($rule["$_"]) "
                             }
                             $offset--
@@ -282,14 +282,14 @@ function printHirarchy {
 
                 write-report "$("`t" * ($BaseLevel + $offset))Configuration:"
                 $offset++
-                $monitor.Configuration.keys | % {
+                $monitor.Configuration.keys | ForEach-Object {
                     if ($_ -eq "Files") {
                         write-report "$("`t" * ($BaseLevel + $offset))$($_): $(([xml]$monitor.Configuration["$_"]).File.Name)"
                     } elseif ($_ -eq "InstanceSettings") {
                         write-report "$("`t" * ($BaseLevel + $offset))$($_):"
                         $a = $_
                         $offset++
-                        $monitor.Configuration["$a"].keys | % {
+                        $monitor.Configuration["$a"].keys | ForEach-Object {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_): $($monitor.Configuration["$a"]["$_"])"
                         }
                         $offset--
@@ -298,7 +298,7 @@ function printHirarchy {
                         write-report "$("`t" * ($BaseLevel + $offset))$($_):"
                         $offset++
                         $a = $_
-                        $monitor.Configuration["$a"].keys | % {
+                        $monitor.Configuration["$a"].keys | ForEach-Object {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_): $($monitor.Configuration["$a"]["$_"])"
                         }
                         $offset--
@@ -341,14 +341,14 @@ function printHirarchy {
                     write-report "$("`t" * ($BaseLevel + $offset))$InnerCounter. Type: $($ds.Type)"
                     $InnerCounter++
                     $offset++
-                    $ds.Configuration.Keys | % {
+                    $ds.Configuration.Keys | ForEach-Object {
                         if ($_ -eq "Files") {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_): $(([xml]$ds.Configuration["$_"]).File.Name)"
                         } elseif ($_ -eq "InstanceSettings") {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_):"
                             $a = $_
                             $offset++
-                            $rule.Configuration["$a"].keys | % {
+                            $rule.Configuration["$a"].keys | ForEach-Object {
                                 write-report "$("`t" * ($BaseLevel + $offset))$($_): $($ds.Configuration["$a"]["$_"]) "
                             }
                             $offset--
@@ -356,7 +356,7 @@ function printHirarchy {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_):"
                             $a = $_
                             $Offset++
-                            $ds.Configuration["$a"].keys | % {
+                            $ds.Configuration["$a"].keys | ForEach-Object {
                                 write-report "$("`t" * ($BaseLevel + $offset))$($_): $($ds.Configuration["$a"]["$_"])"
                             }
                             $offset--
@@ -366,7 +366,7 @@ function printHirarchy {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_):"
                             $a = $_
                             $Offset++
-                            $ds.Configuration["$a"].keys | % {
+                            $ds.Configuration["$a"].keys | ForEach-Object {
                                 write-report "$("`t" * ($BaseLevel + $offset))$($_): $($ds.Configuration["$a"]["$_"])"
                             }
                             $offset--
@@ -378,19 +378,19 @@ function printHirarchy {
                 }
                 $Offset--
 
-                if ($rule.ConditionDetection -ne $null) {
+                if ($null -ne $rule.ConditionDetection) {
                     write-report "$("`t" * ($BaseLevel + $offset))ConditionDetection:"
                     $offset++
                     write-report "$("`t" * ($BaseLevel + $offset))1. Type: $($rule.ConditionDetection.Type)"
                     $offset++
-                    $rule.ConditionDetection.Configuration.Keys | % { 
+                    $rule.ConditionDetection.Configuration.Keys | ForEach-Object { 
                         if ($_ -eq "Files") {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_): $(([xml]$rule.ConditionDetection.Configuration["$_"]).File.Name)"
                         } elseif ($_ -eq "InstanceSettings") {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_):"
                             $a = $_
                             $Offset++
-                            $rule.Configuration["$_"].keys | % {
+                            $rule.Configuration["$_"].keys | ForEach-Object {
                                 write-report "$("`t" * ($BaseLevel + $offset))$($_): $($rule.ConditionDetection.Configuration["$a"]["$_"])"
                             }
                             $offset--
@@ -398,7 +398,7 @@ function printHirarchy {
                             write-report "$("`t" * ($BaseLevel + $offset))$($_):"
                             $a = $_
                             $offset++
-                            $rule.ConditionDetection.Configuration["$a"].keys | % {
+                            $rule.ConditionDetection.Configuration["$a"].keys | ForEach-Object {
                                 write-report "$("`t" * ($BaseLevel + $offset))$($_): $($rule.ConditionDetection.Configuration["$a"]["$_"])"
                             }
                             $offset--
@@ -428,26 +428,35 @@ function printHirarchy {
     }
 }
 
-$FilesToParse = New-Object System.Collections.ArrayList
-
-if ($File -ne $null) {
+if ($PSCmdlet.ParameterSetName -eq "FileScenario") {
     foreach ($f in $File) {
-        $FilesToParse.Add((Get-ChildItem -Path $f)) > $null 2>&1
+        if ([System.IO.File]::Exists($f)) {
+            $FilesToParse = ($File | ForEach-Object {Get-ChildItem -path $_}).FullName
+        }
+        else {
+             Write-Host "Could not find management pack '$f'" -ForegroundColor Red
+        }
+    }
+    if ($FilesToParse.Count -eq 0) {
+        exit 1
     }
 }
-elseif ($($Folder.length) -ne 0) {
-    foreach($f in $(Get-ChildItem -Path $Folder -Filter '*.xml')) {
-        $FilesToParse.Add($f.FullName)  > $null 2>&1
+elseif ($PSCmdlet.ParameterSetName -eq "FolderScenario") {
+    if ([System.IO.Directory]::Exists($Folder)) {
+        [System.IO.FileInfo[]]$FilesToParse = (Get-ChildItem -Path $Folder -Filter '*.xml').FullName
+
+        if ($FilesToParse.Count -eq 0) {
+            Write-Host "Could not find any management pack under '$Folder'" -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "Could not find folder '$Folder'" -ForegroundColor Red
+        exit 1
     }
-}
-else {
-    write-host "No input file specified" -ForegroundColor Red
-    exit 1
 }
 
 foreach ($file in $FilesToParse) {
     Write-Host "Working on $($file)..."
-
 
     $doc = [xml](Get-Content -Path $File)
     $mp = $doc.ManagementPack
@@ -460,7 +469,7 @@ foreach ($file in $FilesToParse) {
 
     #-----------------------------Collect dependencies----------------------------#
     $mp_dependencies = New-Object System.Collections.ArrayList
-    $mp.Manifest.References.ChildNodes | % {
+    $mp.Manifest.References.ChildNodes | ForEach-Object {
         $a = New-Object System.Object
         $a | Add-Member -Name "ID" -MemberType NoteProperty -Value $_.ID
         $a | Add-Member -Name "Version" -MemberType NoteProperty -Value $_.Version
@@ -471,7 +480,7 @@ foreach ($file in $FilesToParse) {
 
     #-------------------------------Collect Classes-------------------------------#
     $mp_classes = New-Object System.Collections.ArrayList
-    $mp.TypeDefinitions.EntityTypes.ClassTypes.ChildNodes | % {
+    $mp.TypeDefinitions.EntityTypes.ClassTypes.ChildNodes | ForEach-Object {
         $class = New-Object object
         $class | Add-Member -Name ID -MemberType NoteProperty -Value $($_.ID)
         $class | Add-Member -Name IsAbstract -MemberType NoteProperty -Value $($_.Abstract)
@@ -483,7 +492,7 @@ foreach ($file in $FilesToParse) {
     #-----------------------------------------------------------------------------#
 
     #-----------------------------Collect Discoveries-----------------------------#
-        $mp.Monitoring.Discoveries.ChildNodes | % {
+        $mp.Monitoring.Discoveries.ChildNodes | ForEach-Object {
         $discovery = New-Object object
         $discovery | Add-Member -MemberType NoteProperty -Name ID -Value $_.ID
         $discovery | Add-Member -MemberType NoteProperty -Name Enabled -Value $_.Enabled
@@ -505,7 +514,7 @@ foreach ($file in $FilesToParse) {
 
         foreach ($i in $_.DiscoveryTypes.DiscoveryClass.TypeID) {
 
-            $mp_classes | ? {$_.ID -eq $i} | % {$_.discovery.add($discovery)} > $null 2>&1
+            $mp_classes | ? {$_.ID -eq $i} | ForEach-Object {$_.discovery.add($discovery)} > $null 2>&1
         
         }
     }
@@ -614,7 +623,7 @@ foreach ($file in $FilesToParse) {
         write-report "Dependencies"
         write-report "$('-' * 12)"
 
-        $mp_dependencies | % {
+        $mp_dependencies | ForEach-Object {
             write-report "$($_.ID),$($_.Version)"
         }
         write-report ""
