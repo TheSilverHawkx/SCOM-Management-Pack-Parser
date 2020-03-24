@@ -1,0 +1,18 @@
+& '.\MP Parser.ps1' -File "C:\Users\omer_r\Desktop\Microsoft.ActiveDirectoryFederationServices.2016.xml" -OutputFolder ./ -Mode Table
+
+
+MP Parser.ps1
+	[-File <string[]>]
+	[-Folder <string>]
+	[[-OutputFolder] <string>]
+	[-Mode ("Report","Table","CheckList")]
+
+Examples:
+	1. Parse a management pack named 'Microsoft.ActiveDirectoryFederationServices.2016.xml' as a report and output it to 'C:\parsed_mps':
+	   MP Parser.ps1 -file "Microsoft.ActiveDirectoryFederationServices.2016.xml" -OutputFolder "C:\parsed_mps" -Mode Report
+	
+	2. Parse a management pack named 'Microsoft.ActiveDirectoryFederationServices.2016.xml' as a Checklist. By default it will be outputted to "C:\temp":
+	   MP Parser.ps1 -file "Microsoft.ActiveDirectoryFederationServices.2016.xml" -Mode Checklist
+
+	3. Parse all management packs in folder "C:\mps" and output them as reports to "C:\parsed_mps":
+	   MP Parser.ps1 -Folder "C:\mps" -Mode Report -OutputFolder "C:\parsed_mps"
