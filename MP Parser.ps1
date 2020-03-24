@@ -514,7 +514,7 @@ foreach ($file in $FilesToParse) {
 
         foreach ($i in $_.DiscoveryTypes.DiscoveryClass.TypeID) {
 
-            $mp_classes | ? {$_.ID -eq $i} | ForEach-Object {$_.discovery.add($discovery)} > $null 2>&1
+            $mp_classes | Where-Object {$_.ID -eq $i} | ForEach-Object {$_.discovery.add($discovery)} > $null 2>&1
         
         }
     }
@@ -524,7 +524,7 @@ foreach ($file in $FilesToParse) {
     $mp_Monitors = New-Object System.Collections.ArrayList
     $monitors = $mp.Monitoring.Monitors.ChildNodes
     foreach ($id in $mp_classes.id) {
-        foreach ($mon in ($monitors | ? {$_.Target -eq $id})){
+        foreach ($mon in ($monitors | Where-Object {$_.Target -eq $id})){
             $monitor = New-Object object
 
             $monitor |Add-Member -MemberType NoteProperty -Name ID -Value $mon.ID
@@ -536,7 +536,7 @@ foreach ($file in $FilesToParse) {
 
         
             # Collect Alert Information
-            if ($mon.AlertSettings.AlertOnState -ne $null) {
+            if ($null -ne $mon.AlertSettings.AlertOnState) {
                 $monitor |Add-Member -MemberType NoteProperty -Name Alerting -Value "true"
                 $monitor |Add-Member -MemberType NoteProperty -Name "Alert On State" -Value $mon.AlertSettings.AlertOnState
                 $monitor |Add-Member -MemberType NoteProperty -Name "Alert Priority" -Value $mon.AlertSettings.AlertPriority
@@ -566,7 +566,7 @@ foreach ($file in $FilesToParse) {
     $mp_Rules = New-Object System.Collections.ArrayList
     $rules = $mp.Monitoring.Rules.ChildNodes
     foreach ($id in $mp_classes.id) {
-        foreach ($rul in ($rules | ? {$_.Target -eq $id})){
+        foreach ($rul in ($rules | where-object {$_.Target -eq $id})){
             $rule = New-Object object
 
             $rule |Add-Member -MemberType NoteProperty -Name ID -Value $rul.ID
@@ -578,13 +578,13 @@ foreach ($file in $FilesToParse) {
             $datasources = parseModule -ModuleType Datasource -Location $rul.DataSources
             $rule | Add-Member -MemberType NoteProperty -Name DataSources -Value $datasources
         
-            if ($rul.ProbeActions -ne $null) {
+            if ($null -ne $rul.ProbeActions) {
                 $probeactions = parseModule -ModuleType ProbeAction -Location $rul.ProbeActions
                 $rule | Add-Member -MemberType NoteProperty -Name ProbeActions -Value $probeactions
             }
 
             # Collect Condition Detection
-            if ($rul.ConditionDetection -ne $null) {
+            if ($null -ne $rul.ConditionDetection) {
                 $conditiondetection = parseModule -ModuleType ConditionDetection -Location $rul.ConditionDetection
                 $rule | Add-Member -MemberType NoteProperty -Name ConditionDetection -Value $conditiondetection        
             }
@@ -598,18 +598,18 @@ foreach ($file in $FilesToParse) {
     }
     #-----------------------------------------------------------------------------#
     #-------------------------Enrich From LanguagePacks---------------------------#
-    $displaystrings = $mp.LanguagePacks.LanguagePack.DisplayStrings.ChildNodes | ? {$_.SubElementID -eq $nul}
+    $displaystrings = $mp.LanguagePacks.LanguagePack.DisplayStrings.ChildNodes | where-object {$_.SubElementID -eq $nul}
 
     foreach ($class in $mp_classes) {
-        $class | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | ? {$_.ElementID -eq $class.ID}).Name)
+        $class | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | where-object {$_.ElementID -eq $class.ID}).Name)
     }
 
     foreach ($monitor in $mp_Monitors) {
-        $monitor | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | ? {$_.ElementID -eq $monitor.ID}).Name)
+        $monitor | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | where-object {$_.ElementID -eq $monitor.ID}).Name)
     }
 
     foreach ($rule in $mp_Rules) {
-        $rule | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | ? {$_.ElementID -eq $rule.ID}).Name)
+        $rule | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | where-object {$_.ElementID -eq $rule.ID}).Name)
     }
 
     #-----------------------------------------------------------------------------#
@@ -656,8 +656,8 @@ foreach ($file in $FilesToParse) {
             }
             write-report ""
 
-            if (($mp_Monitors | ? {$_.target -eq $class.ID -and $_.Type -like "*Unit*"}).Count -ne 0 ) {
-                printHirarchy -Node ($mp_Monitors | ? {$_.target -eq $class.ID}) -Mode Monitor -BaseLevel 1
+            if (($mp_Monitors | where-object {$_.target -eq $class.ID -and $_.Type -like "*Unit*"}).Count -ne 0 ) {
+                printHirarchy -Node ($mp_Monitors | where-object {$_.target -eq $class.ID}) -Mode Monitor -BaseLevel 1
             }
             else {
                 write-report "`tRelated Monitors:"
@@ -666,9 +666,9 @@ foreach ($file in $FilesToParse) {
             }
             write-report ""
     
-            if (($mp_Rules | ? {$_.target -eq $class.ID}).Count -ne 0 ) {
+            if (($mp_Rules | where-object {$_.target -eq $class.ID}).Count -ne 0 ) {
 
-                printHirarchy -Node ($mp_Rules | ? {$_.target -eq $class.ID}) -Mode Rule -BaseLevel 1
+                printHirarchy -Node ($mp_Rules | where-object {$_.target -eq $class.ID}) -Mode Rule -BaseLevel 1
             }
             else {
                 write-report "`tRelated Rules:"
@@ -679,18 +679,11 @@ foreach ($file in $FilesToParse) {
 
         }
     } elseif ($Mode -eq "Table") {
-        $OutputFile = New-Item -ItemType File -Path "$OutputFolder\$($mp_ID).csv" -Force
-
-        foreach ($class in $mp_classes) {
-            $class
-
-        }
-    } elseif ($Mode -eq "CheckList") {
         $ChecklistFolder = New-Item -ItemType Directory -Path "$OutputFolder\$($mp_ID)" -Force
 
         if ($mp_Monitors.Count -ne 0) {
             $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).monitors.csv" -Force
-            $mp_Monitors | select -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
+            $mp_Monitors | select-object @{NAme="ManagementPack";Expression={$($mp_ID)}},displayName,target,Enabled,Alerting,'Alert Priority','Alert Severity' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
         }
 
         if ($mp_Rules.Count -ne 0) {
@@ -705,8 +698,30 @@ foreach ($file in $FilesToParse) {
                     $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "false"
                 }
             }
-            $mp_Rules | select -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
+            $mp_Rules | Select-Object  @{NAme="ManagementPack";Expression={$($mp_ID)}},displayName,target,Enabled,Alerting,'Alert Priority','Alert Severity' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
+        }
+    
+    } elseif ($Mode -eq "CheckList") {
+        $ChecklistFolder = New-Item -ItemType Directory -Path "$OutputFolder\$($mp_ID)" -Force
+
+        if ($mp_Monitors.Count -ne 0) {
+            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).monitors.csv" -Force
+            $mp_Monitors | select-objec -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
+        }
+
+        if ($mp_Rules.Count -ne 0) {
+            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).rules.csv" -Force
+            foreach ($rule in $mp_Rules) {
+                if ($rule.WriteActions.type -like "*GenerateAlert") {
+                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "true"
+                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Priority' -Value $rule.WriteActions.Configuration.Priority
+                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Severity' -Value $rule.WriteActions.Configuration.Severity
+                }
+                else {
+                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "false"
+                }
+            }
+            $mp_Rules | select-object -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
         }
     }
-    
 }
