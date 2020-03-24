@@ -706,7 +706,7 @@ foreach ($file in $FilesToParse) {
 
         if ($mp_Monitors.Count -ne 0) {
             $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).monitors.csv" -Force
-            $mp_Monitors | select-objec -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
+            $mp_Monitors | select-object -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
         }
 
         if ($mp_Rules.Count -ne 0) {
