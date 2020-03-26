@@ -1,4 +1,4 @@
-function initialize($WorkDirectory ="C:\temp") {
+function initialize($WorkDirectory ="C:\temp",$Name) {
 
     # Create Work Directory
     if (![System.IO.Directory]::Exists($WorkDirectory)) {
@@ -6,29 +6,271 @@ function initialize($WorkDirectory ="C:\temp") {
     }
 
     # Create Report File
-    $Global:OutputFile = New-Item -ItemType File -Path "$OutputFolder\$($mp_ID).txt" -Force
+    $OutputFile = New-Item -ItemType File -Path "$WorkDirectory\$Name.txt" -Force
+    return $OutputFile
+}
+
+function Write-Hirarchy {
+    Param (
+        [object]$Node,
+        [ValidateSet('Discovery','Monitor','Rule')]
+        [string]$Mode,
+        [int]$BaseLevel = 1
+    )
+    $offset = 0
+    $Counter = 1
+    switch ($Mode) {
+        "Discovery" {
+            write-line "$("`t" * ($BaseLevel + $offset))Discovery:"
+            write-line "$("`t" * ($BaseLevel + $offset))$("-" *"Discovery:".length)"
+
+
+            foreach ($discovery in $Node.discovery) {
+                write-line "$("`t" * ($BaseLevel + $offset))$Counter.`tID: $($discovery.ID):"
+                $offset++
+                write-line "$("`t" * ($BaseLevel + $offset))Target: $($discovery.Target):"
+                write-line "$("`t" * ($BaseLevel + $offset))Running: $($Node.Discovery.Enabled)"
+                write-line "$("`t" * ($BaseLevel + $offset))Type: $($Node.Discovery.Type)"
+                write-line "$("`t" * ($BaseLevel + $offset))Configuration:"
+
+                $offset++
+
+                $discovery.Configuration.keys | ForEach-Object {
+                    if ($_ -eq "Files") {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_): $(([xml]$discovery.Configuration["$_"]).File.Name)"
+                    } elseif ($_ -eq "InstanceSettings") {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                        $a = $_
+
+                        $offset++
+                        $Discovery.Configuration["$_"].keys | ForEach-Object {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $($Discovery.Configuration["$a"]["$_"]) "
+                        }
+                        $offset--
+                    } elseif ($_ -like "*Expression*") {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_):  $(($Discovery.Configuration["$_"]).trimEnd())"
+                    } elseif ($_ -eq "MembershipRules" -or $_ -eq "RegistryAttributeDefinitions") {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                        $offset++
+                        foreach ($rule in $Discovery.Configuration["$_"])
+                        {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_) $($Counter):"
+                            $offset++
+                        
+                            $rule.keys | ForEach-Object {
+                                write-line "$("`t" * ($BaseLevel + $offset))$($_): $($rule["$_"]) "
+                            }
+                            $offset--
+                            $Counter++
+                        }
+                        $offset--
+                    } else {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_): $($Discovery.Configuration["$_"])"
+                    }
+                }
+                $offset--
+                $offset--
+                $Counter++
+                write-line ""
+            }
+        }
+        "Monitor" {
+            write-line "$("`t" * ($BaseLevel + $offset))Related Monitors:"
+            write-line "$("`t" * ($BaseLevel + $offset))$("-" *"Related Monitors:".length)"
+
+            foreach ($monitor in $Node) {
+                if ($monitor.Type -notlike "Unit*") { continue }
+
+                write-line "$("`t" * ($BaseLevel + $offset))$Counter. $($monitor.DisplayName):"
+                $Counter++
+                $offset++
+
+                write-line "$("`t" * ($BaseLevel + $offset))Running: $($monitor.Enabled)"
+                write-line "$("`t" * ($BaseLevel + $offset))Type: $($monitor.MonitorType)"
+                if ($monitor.Alerting -eq "true") {
+                    write-line "$("`t" * ($BaseLevel + $offset))Alert:"
+                    $offset++
+                    write-line "$("`t" * ($BaseLevel + $offset))Alert Severity: $($monitor.'Alert Severity')"
+                    write-line "$("`t" * ($BaseLevel + $offset))Alert Priority: $($monitor.'Alert Priority')"
+                    $offset--
+                }
+                else {
+                    write-line "$("`t" * ($BaseLevel + $offset))Alert: None"
+                }
+
+                write-line "$("`t" * ($BaseLevel + $offset))Configuration:"
+                $offset++
+                $monitor.Configuration.keys | ForEach-Object {
+                    if ($_ -eq "Files") {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_): $(([xml]$monitor.Configuration["$_"]).File.Name)"
+                    } elseif ($_ -eq "InstanceSettings") {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                        $a = $_
+                        $offset++
+                        $monitor.Configuration["$a"].keys | ForEach-Object {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $($monitor.Configuration["$a"]["$_"])"
+                        }
+                        $offset--
+
+                    } elseif ($_ -eq "Consolidator") {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                        $offset++
+                        $a = $_
+                        $monitor.Configuration["$a"].keys | ForEach-Object {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $($monitor.Configuration["$a"]["$_"])"
+                        }
+                        $offset--
+                    } elseif ($_ -like "*Expression*") {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_): $(($monitor.Configuration["$_"]).trimEnd())"
+                    } else {
+                        write-line "$("`t" * ($BaseLevel + $offset))$($_): $($monitor.Configuration["$_"])"
+                    }
+                }
+                $offset--
+                $offset--
+            }
+        }
+        "Rule" {
+            write-line "$("`t" * ($BaseLevel + $offset))Related Rules:"
+            write-line "$("`t" * ($BaseLevel + $offset))$("-" *"Related Rules:".length)"
+
+            foreach ($rule in $Node) {
+                write-line "$("`t" * ($BaseLevel + $offset))$Counter. $($rule.DisplayName):"
+                
+                $Offset++
+                $Counter++
+
+                write-line "$("`t" * ($BaseLevel + $offset))Running: $($rule.Enabled)"
+                if ($rule.WriteActions.Type -like "*GenerateAlert*") {
+                    write-line "$("`t" * ($BaseLevel + $offset))Alert:"
+                    $Offset++
+                    write-line "$("`t" * ($BaseLevel + $offset))Alert Severity: $($rule.'WriteActions'.Configuration.Severity)"
+                    write-line "$("`t" * ($BaseLevel + $offset))Alert Priority: $($rule.'WriteActions'.Configuration.Priority)"
+                    $Offset--
+                }
+                else {
+                    write-line "$("`t" * ($BaseLevel + $offset))Alert: None"
+                }
+
+                write-line "$("`t" * ($BaseLevel + $offset))DataSource:"
+                $Offset++
+                $InnerCounter = 1
+                foreach ($ds in $rule.DataSources) {
+                    write-line "$("`t" * ($BaseLevel + $offset))$InnerCounter. Type: $($ds.Type)"
+                    $InnerCounter++
+                    $offset++
+                    $ds.Configuration.Keys | ForEach-Object {
+                        if ($_ -eq "Files") {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $(([xml]$ds.Configuration["$_"]).File.Name)"
+                        } elseif ($_ -eq "InstanceSettings") {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                            $a = $_
+                            $offset++
+                            $rule.Configuration["$a"].keys | ForEach-Object {
+                                write-line "$("`t" * ($BaseLevel + $offset))$($_): $($ds.Configuration["$a"]["$_"]) "
+                            }
+                            $offset--
+                        } elseif ($_ -eq "Consolidator") {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                            $a = $_
+                            $Offset++
+                            $ds.Configuration["$a"].keys | ForEach-Object {
+                                write-line "$("`t" * ($BaseLevel + $offset))$($_): $($ds.Configuration["$a"]["$_"])"
+                            }
+                            $offset--
+                        } elseif ($_ -like "*Expression*") {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $(($ds.Configuration["$_"]).trimEnd()) "
+                        } elseif ($_ -eq "Scheduler"){
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                            $a = $_
+                            $Offset++
+                            $ds.Configuration["$a"].keys | ForEach-Object {
+                                write-line "$("`t" * ($BaseLevel + $offset))$($_): $($ds.Configuration["$a"]["$_"])"
+                            }
+                            $offset--
+                        } else {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $($ds.Configuration["$_"])"
+                        }
+                    }
+                    $offset--
+                }
+                $Offset--
+
+                if ($null -ne $rule.ConditionDetection.keys) {
+                    write-line "$("`t" * ($BaseLevel + $offset))ConditionDetection:"
+                    $offset++
+                    write-line "$("`t" * ($BaseLevel + $offset))1. Type: $($rule.ConditionDetection.Type)"
+                    $offset++
+                    $rule.ConditionDetection.Configuration.Keys | ForEach-Object { 
+                        if ($_ -eq "Files") {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $(([xml]$rule.ConditionDetection.Configuration["$_"]).File.Name)"
+                        } elseif ($_ -eq "InstanceSettings") {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                            $a = $_
+                            $Offset++
+                            $rule.Configuration["$_"].keys | ForEach-Object {
+                                write-line "$("`t" * ($BaseLevel + $offset))$($_): $($rule.ConditionDetection.Configuration["$a"]["$_"])"
+                            }
+                            $offset--
+                        } elseif ($_ -eq "Consolidator") {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_):"
+                            $a = $_
+                            $offset++
+                            $rule.ConditionDetection.Configuration["$a"].keys | ForEach-Object {
+                                write-line "$("`t" * ($BaseLevel + $offset))$($_): $($rule.ConditionDetection.Configuration["$a"]["$_"])"
+                            }
+                            $offset--
+                        } elseif ($_ -like "*Expression*") {
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $(($rule.ConditionDetection.Configuration["$_"]).trimEnd())"
+                        } else {
+                            write-host $_
+                            write-line "$("`t" * ($BaseLevel + $offset))$($_): $($rule.ConditionDetection.Configuration["$_"])"
+                        }
+                    }
+                    $Offset--
+                    $Offset--
+                }
+                write-line ""
+                write-line "$("`t" * ($BaseLevel + $offset))WriteActions:"
+                $InnerCounter = 1
+                $offset++
+                foreach ($wa in $rule.WriteActions) {
+                    write-line "$("`t" * ($BaseLevel + $offset))$InnerCounter. Type: $($wa.Type)"
+                    $InnerCounter++
+                }
+                $offset--
+
+                $offset--
+                write-line ""
+            }
+        }
+    }
 }
 
 function write-line($text) {
     
-    "$text" | Out-File -FilePath $Global:OutputFile -Append
+    "$text" | Out-File -FilePath $file -Append
     
 }
 
 function write-report {
     Param (
-        [object]$ParsedMP
+        [Parameter(Mandatory)]
+        [object]$ManagementPack,
+        [string]$WorkDirectory
     )
-        
-        write-line "$mp_Name"
-        write-line "$('=' * $mp_Name.Length)"
+        write-host $ManagementPack.Name,"i"
+        $file = initialize -WorkDirectory $WorkDirectory -Name $ManagementPack.Name 
+
+        write-line "$($ManagementPack.Name)"
+        write-line "$('=' * $ManagementPack.Name.Length)"
         write-line ""
 
         write-line "Dependencies"
         write-line "$('-' * 12)"
 
-        $mp_dependencies | ForEach-Object {
-            write-line "$($_.ID),$($_.Version)"
+        $ManagementPack.Dependencies | ForEach-Object {
+            write-line "$($_.ID)`t$($_.Version)`t$($_.Alias)"
         }
         write-line ""
         write-line ""
@@ -37,7 +279,7 @@ function write-report {
         write-line "Classes"
         write-line "$('-' * 7)"
         $i = 1
-        foreach ($class in $mp_classes) {
+        foreach ($class in $ManagementPack.Classes) {
             if ($class.IsAbstract -eq "True")
             {
                 write-line "$i.`tName: $($class.DisplayName)"
@@ -52,7 +294,7 @@ function write-report {
             $i++
             write-line ""
             if ($class.Discovery.count -ne 0) {
-                printHirarchy -Node $class -Mode Discovery -BaseLevel 1
+                Write-Hirarchy -Node $class -Mode Discovery -BaseLevel 1
             } else {
                 write-line "`tDiscovery:"
                 write-line "`t$("-" *"Discovery:".length)"
@@ -60,8 +302,8 @@ function write-report {
             }
             write-line ""
 
-            if (($mp_Monitors | where-object {$_.target -eq $class.ID -and $_.Type -like "*Unit*"}).Count -ne 0 ) {
-                printHirarchy -Node ($mp_Monitors | where-object {$_.target -eq $class.ID}) -Mode Monitor -BaseLevel 1
+            if (($Managementpack.Monitors | where-object {$_.target -eq $class.ID -and $_.Type -like "*Unit*"}).Count -ne 0 ) {
+                Write-Hirarchy -Node ($Managementpack.Monitors | where-object {$_.target -eq $class.ID}) -Mode Monitor -BaseLevel 1
             }
             else {
                 write-line "`tRelated Monitors:"
@@ -70,9 +312,9 @@ function write-report {
             }
             write-line ""
     
-            if (($mp_Rules | where-object {$_.target -eq $class.ID}).Count -ne 0 ) {
+            if (($ManagementPack.Rules | where-object {$_.target -eq $class.ID}).Count -ne 0 ) {
 
-                printHirarchy -Node ($mp_Rules | where-object {$_.target -eq $class.ID}) -Mode Rule -BaseLevel 1
+                Write-Hirarchy -Node ($ManagementPack.Rules | where-object {$_.target -eq $class.ID}) -Mode Rule -BaseLevel 1
             }
             else {
                 write-line "`tRelated Rules:"
@@ -83,117 +325,5 @@ function write-report {
 
         }
 }
-
-<#if ($Mode -eq "Report") {
-        $OutputFile = New-Item -ItemType File -Path "$OutputFolder\$($mp_ID).txt" -Force
-
-        write-report "$mp_Name"
-        write-report "$('=' * $mp_Name.Length)"
-        write-report ""
-
-        write-report "Dependencies"
-        write-report "$('-' * 12)"
-
-        $mp_dependencies | ForEach-Object {
-            write-report "$($_.ID),$($_.Version)"
-        }
-        write-report ""
-        write-report ""
-
-
-        write-report "Classes"
-        write-report "$('-' * 7)"
-        $i = 1
-        foreach ($class in $mp_classes) {
-            if ($class.IsAbstract -eq "True")
-            {
-                write-report "$i.`tName: $($class.DisplayName)"
-                write-report "$(' ' * ("$i".Length))  ID: $($class.ID)"
-                write-report "$(' ' * ("$i".Length))  Abstract: $($class.IsAbstract)"
-                $i++
-                write-report ""
-                continue
-            }
-            write-report "$i. Name: $($class.DisplayName)"
-            write-report "$(' ' * ("$i".Length))  ID: $($class.ID)"
-            $i++
-            write-report ""
-            if ($class.Discovery.count -ne 0) {
-                printHirarchy -Node $class -Mode Discovery -BaseLevel 1
-            } else {
-                write-report "`tDiscovery:"
-                write-report "`t$("-" *"Discovery:".length)"
-                write-report "`tNone"
-            }
-            write-report ""
-
-            if (($mp_Monitors | where-object {$_.target -eq $class.ID -and $_.Type -like "*Unit*"}).Count -ne 0 ) {
-                printHirarchy -Node ($mp_Monitors | where-object {$_.target -eq $class.ID}) -Mode Monitor -BaseLevel 1
-            }
-            else {
-                write-report "`tRelated Monitors:"
-                write-report "`t$("-" *"Related Monitors:".length)"
-                write-report "`t`None"
-            }
-            write-report ""
-    
-            if (($mp_Rules | where-object {$_.target -eq $class.ID}).Count -ne 0 ) {
-
-                printHirarchy -Node ($mp_Rules | where-object {$_.target -eq $class.ID}) -Mode Rule -BaseLevel 1
-            }
-            else {
-                write-report "`tRelated Rules:"
-                write-report "`t$("-" *"Related Rules:".length)"
-                write-report "`t`None"
-            }
-            write-report ""
-
-        }
-    } elseif ($Mode -eq "Table") {
-        $ChecklistFolder = New-Item -ItemType Directory -Path "$OutputFolder\$($mp_ID)" -Force
-
-        if ($mp_Monitors.Count -ne 0) {
-            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).monitors.csv" -Force
-            $mp_Monitors | select-object @{NAme="ManagementPack";Expression={$($mp_ID)}},displayName,target,Enabled,Alerting,'Alert Priority','Alert Severity' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
-        }
-
-        if ($mp_Rules.Count -ne 0) {
-            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).rules.csv" -Force
-            foreach ($rule in $mp_Rules) {
-                if ($rule.WriteActions.type -like "*GenerateAlert") {
-                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "true"
-                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Priority' -Value $rule.WriteActions.Configuration.Priority
-                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Severity' -Value $rule.WriteActions.Configuration.Severity
-                }
-                else {
-                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "false"
-                }
-            }
-            $mp_Rules | Select-Object  @{NAme="ManagementPack";Expression={$($mp_ID)}},displayName,target,Enabled,Alerting,'Alert Priority','Alert Severity' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
-        }
-    
-    } elseif ($Mode -eq "CheckList") {
-        $ChecklistFolder = New-Item -ItemType Directory -Path "$OutputFolder\$($mp_ID)" -Force
-
-        if ($mp_Monitors.Count -ne 0) {
-            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).monitors.csv" -Force
-            $mp_Monitors | select-object -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
-        }
-
-        if ($mp_Rules.Count -ne 0) {
-            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).rules.csv" -Force
-            foreach ($rule in $mp_Rules) {
-                if ($rule.WriteActions.type -like "*GenerateAlert") {
-                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "true"
-                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Priority' -Value $rule.WriteActions.Configuration.Priority
-                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Severity' -Value $rule.WriteActions.Configuration.Severity
-                }
-                else {
-                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "false"
-                }
-            }
-            $mp_Rules | select-object -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
-        }
-    }#>
 
 Export-ModuleMember -Function write-report
