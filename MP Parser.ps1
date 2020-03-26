@@ -73,7 +73,7 @@ foreach ($file in $FilesToParse) {
 
     #--------------------------------Collect Name---------------------------------#
     $ManagementPack | Add-Member -MemberType NoteProperty -Name ID -Value $mp.Manifest.Identity.ID
-    $ManagementPack | Add-Member -MemberType NoteProperty -Name Name -Value $mp.Manifest.Name
+    $ManagementPack | Add-Member -MemberType NoteProperty -Name Name -Value ($mp.LanguagePacks.LanguagePack.DisplayStrings.ChildNodes | where-object {$_.ElementID -eq $ManagementPack.ID}).Name
 
     #-----------------------------------------------------------------------------#
     #-----------------------------Collect dependencies----------------------------#
@@ -123,13 +123,14 @@ foreach ($file in $FilesToParse) {
     #-------------------------Enrich From LanguagePacks---------------------------#
     $displaystrings = $mp.LanguagePacks.LanguagePack.DisplayStrings.ChildNodes | where-object {$_.SubElementID -eq $nul}
 
+    
+
     Add-DisplayNames -DisplayStrings $displaystrings -ListOfObjects $ManagementPack.Classes
 
     Add-DisplayNames -DisplayStrings $displaystrings -ListOfObjects $ManagementPack.Rules
 
     Add-DisplayNames -DisplayStrings $displaystrings -ListOfObjects $ManagementPack.Monitors
 
-    #$ManagementPack
     #-----------------------------------------------------------------------------#
     #------------------------------Process Output---------------------------------#
 
