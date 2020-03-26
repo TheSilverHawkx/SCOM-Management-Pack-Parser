@@ -427,6 +427,20 @@ function printHirarchy {
         }
     }
 }
+function ParseManagementPackXml {
+    Param (
+        [string]$Path
+    )
+    $XMLReadersettings = New-Object System.Xml.XmlReaderSettings
+    $XMLReadersettings.IgnoreComments = $true
+    $XMLReadersettings.IgnoreWhitespace = $true
+
+    $reader = [System.Xml.XmlReader]::Create("$Path",$XMLReadersettings)
+
+    $doc = new-object System.Xml.XmlDocument
+    $doc.Load($reader)
+    return $doc
+}
 
 if ($PSCmdlet.ParameterSetName -eq "FileScenario") {
     foreach ($f in $File) {
@@ -458,7 +472,7 @@ elseif ($PSCmdlet.ParameterSetName -eq "FolderScenario") {
 foreach ($file in $FilesToParse) {
     Write-Host "Working on $($file)..."
 
-    $doc = [xml](Get-Content -Path $File)
+    $doc = ParseManagementPackXml -Path $File
     $mp = $doc.ManagementPack
     
 
