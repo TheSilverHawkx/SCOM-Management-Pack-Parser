@@ -1,3 +1,4 @@
+[CmdletBinding()]
 Param (
     [Parameter(Position = 0, Mandatory = $true,ParameterSetName= "FileScenario", Valuefrompipeline)]
     [string[]]$File,
@@ -6,188 +7,20 @@ Param (
 
     [Parameter(Position = 1, Mandatory = $true,ParameterSetName= "FileScenario")]
     [Parameter(Position = 1,ParameterSetName= "FolderScenario")]
-    [ValidateSet("Report","Table","CheckList")]
-    [string]$Mode = "Report",
+    [ArgumentCompleter(
+        {((get-childitem -Path "Modules\Output Modules" -Filter "*.ps*1").name.split('.')[0])}
+        )]
+    [ValidateScript(
+            { $_ -in $((get-childitem -Path "Modules\Output Modules" -Filter "*.ps*1").name.split('.')[0]) }
+        )]
+    [string[]]$Mode = "Report",
 
     [Parameter(Position = 2, ParameterSetName= "FileScenario")]
     [Parameter(Position = 2, ParameterSetName= "FolderScenario")]
     [string]$OutputFolder = "C:\temp\"
 )
-function parseExpression {
-    Param (
-        [System.Xml.XmlElement[]]$Node,
-        [string]$logicOperand,
-        [string]$output = ""
-    )
 
-    if ($Node.FirstChild.LocalName -in @("And","Or")) {
-        $output += "("
-        $Node.FirstChild.ChildNodes | ForEach-Object {
-            $output = (parseExpression -Node $_ -logicOperand $Node.FirstChild.LocalName -output $output)
-        }
-        if ($output -match ".*$($Node.FirstChild.LocalName) $") {
-            $output = $output.Substring(0,$output.LastIndexOf(" $($Node.FirstChild.LocalName)"))
-        }
-        $output += ")"
-        return $output
-    }
-    elseif ($Node.LocalName -eq "Expression") {
-        $output += "("
-        $output += (parseExpression -Node $Node.FirstChild -logicOperand $logicOperand -output $output)
-        $output += ") $logicOperand "
-        
-        return $output
-    }
-    elseif ($Node.LocalName -eq "Contains") {
-        $node.ChildNodes | ForEach-Object {
-            $output += "$($Node.LocalName) ($($_.LocalName)) $($_.innerText)"
-        }
-        return $output
-    }
-    else {
-        if ($null -ne $node.SelectSingleNode("./Operator")) {
-            $operator = $Node.Operator 
-        }
-        else {
-            $operator = $node.FirstChild.Operator
-        }
-        $output = $Node.InnerText -replace "$operator"," $operator "
-        
-        return $output
-    }
-
-}
-
-function parseModule {
-    Param (
-        [Parameter(mandatory)]
-        [ValidateSet('Datasource','ProbeAction','ConditionDetection','WriteAction')]
-        [string]$ModuleType,
-        [System.Xml.XmlElement[]]$Location
-    )
-    $module_list = New-Object System.Collections.ArrayList 
-
-    if ($ModuleType -eq 'ConditionDetection') {
-        $node = New-Object object
-        $node | Add-Member -MemberType NoteProperty -Name "Type" -Value $Location.TypeID
-
-        $configuration = @{}
-        foreach ($config in $Location.ChildNodes) {
-            if (isSpecialCase($config.LocalName))
-            {
-                handleSpecialCases -Configuration $configuration -Location $config
-            }
-            else {
-                $configuration.Add($config.LocalName,$($config.InnerXml -replace "><",">`n<"))
-            }
-        }
-        $node | Add-Member -MemberType NoteProperty -Name "Configuration" -Value $configuration
-        $module_list.Add($node) >$null 2>&1
-    }
-    else {
-        foreach ($module in $Location.ChildNodes) {
-            $node = New-Object object
-            $node | Add-Member -MemberType NoteProperty -Name "Type" -Value $module.TypeID
-
-            $configuration = @{}
-            foreach ($config in $module.ChildNodes) {
-                if (isSpecialCase($config.LocalName))
-                {
-                    handleSpecialCases -Configuration $configuration -Location $config
-                }
-                else {
-                    $configuration.Add($config.LocalName,$($config.InnerXml -replace "><",">`n<"))
-                }
-            }
-            $node | Add-Member -MemberType NoteProperty -Name "Configuration" -Value $configuration
-            $module_list.Add($node) >$null 2>&1
-        }
-    }
-    return $module_list
-}
-function parseMembershipRule {
-    Param (
-        [System.Xml.XmlElement[]]$Rule
-        
-    )
-    $configuration = @{}
-
-    foreach ($setting in $Rule.ChildNodes) {
-        if (isSpecialCase($setting.localname)) {
-            handleSpecialCases -Configuration $Configuration -Location $setting
-        }
-        else {
-            $configuration.Add($setting.localname,$setting.innerText)
-        }
-    }
-
-    return $configuration
-}
-function isSpecialCase($name) {
-
-    if ($name -like "*Expression*") {
-        return $true
-    }
-    elseif ($name -in ("InstanceSettings","Suppression","Consolidator","AlertParameters","MembershipRules","RegistryAttributeDefinitions","Scheduler")) {
-        return $true
-    }
-    else {
-        return $false
-    }
-}
-function handleSpecialCases {
-    Param (
-        [Hashtable]$Configuration = @{},
-        [System.Xml.XmlElement[]]$Location
-    )
-    $settings = @{}
-    if ($Location.LocalName -eq "Consolidator") {
-        foreach ($setting in $Location.ChildNodes) {
-            $settings.add($setting.LocalName,$($setting.InnerXml -replace "><","> <"))
-        }
-        $configuration.add($Location.LocalName,$settings)
-    }
-    elseif ($Location.LocalName -eq "InstanceSettings") {
-        foreach ($setting in $Location.Settings.ChildNodes) {
-            $settings.add($setting.Name,$setting.Value)
-        }
-        $Configuration.add($Location.LocalName,$settings)
-    }
-    elseif ($Location.LocalName -eq "AlertParameters" -or $Location.LocalName -eq "Scheduler") {
-        foreach ($setting in $Location.ChildNodes) {
-            $settings.Add($setting.LocalName,$($setting.InnerXml -replace "><",">`t<"))
-        }
-        $configuration.add($Location.LocalName,$settings)
-    }
-    elseif ($location.LocalName -eq "Supperssion") {
-        $i = 1
-        foreach ($setting in $Location.ChildNodes) {
-            $settings.Add($setting.LocalName + "$i",$($setting.InnerXml -replace "><",">`t<"))            
-            $i++
-        }
-        $configuration.Add($location.LocalName.LocalName,$settings)
-    }
-    elseif ($location.LocalName -like "*Expression*") {
-        $configuration.Add($Location.LocalName,$(parseExpression -Node $location))
-    }
-    elseif ($location.LocalName -eq "MembershipRules") {
-        $rules = New-Object System.Collections.ArrayList
-        foreach ($setting in $location.ChildNodes) {
-            $rules.add((parseMembershipRule -Rule $setting -Array $settings)) > $null 2>&1
-        }
-        $Configuration.Add($location.LocalName,$rules)
-    }
-    elseif ($Location.LocalName -eq "RegistryAttributeDefinitions") {
-        $rules = New-Object System.Collections.ArrayList
-        foreach ($setting in $location.ChildNodes) {
-            $rules.add((parseMembershipRule -Rule $setting -Array $settings)) > $null 2>&1
-        }
-        $Configuration.Add($location.LocalName,$rules)
-    }
-    else {
-        $configuration.Add($location.LocalName,"Not Implemented")
-    }
-}
+Import-Module ".\Modules\Parser\Parser.psm1"
 function write-report($text) {
     
     "$text" | Out-File -Append -FilePath $OutputFile 
@@ -475,267 +308,75 @@ foreach ($file in $FilesToParse) {
     $doc = ParseManagementPackXml -Path $File
     $mp = $doc.ManagementPack
     
+    $ManagementPack = New-Object System.Object
 
     #--------------------------------Collect Name---------------------------------#
-    $mp_ID = $mp.Manifest.Identity.ID
-    $mp_Name = $mp.Manifest.Name
-    #-----------------------------------------------------------------------------#
+    $ManagementPack | Add-Member -MemberType NoteProperty -Name ID -Value $mp.Manifest.Identity.ID
+    $ManagementPack | Add-Member -MemberType NoteProperty -Name Name -Value $mp.Manifest.Name
 
+    #-----------------------------------------------------------------------------#
     #-----------------------------Collect dependencies----------------------------#
-    $mp_dependencies = New-Object System.Collections.ArrayList
-    $mp.Manifest.References.ChildNodes | ForEach-Object {
-        $a = New-Object System.Object
-        $a | Add-Member -Name "ID" -MemberType NoteProperty -Value $_.ID
-        $a | Add-Member -Name "Version" -MemberType NoteProperty -Value $_.Version
+    $ManagementPack | Add-Member -MemberType NoteProperty -Name Dependencies -Value (Parse-Manifest -Node $mp.Manifest)
 
-        $mp_dependencies.Add($a)  >$null 2>&1
-    }
     #-----------------------------------------------------------------------------#
-
     #-------------------------------Collect Classes-------------------------------#
-    $mp_classes = New-Object System.Collections.ArrayList
+    $ManagementPack | Add-Member -MemberType NoteProperty -Name Classes -Value (New-Object System.Collections.ArrayList)
+
     $mp.TypeDefinitions.EntityTypes.ClassTypes.ChildNodes | ForEach-Object {
-        $class = New-Object object
-        $class | Add-Member -Name ID -MemberType NoteProperty -Value $($_.ID)
-        $class | Add-Member -Name IsAbstract -MemberType NoteProperty -Value $($_.Abstract)
-        $class | Add-Member -Name IsHosted -MemberType NoteProperty -Value $($_.Hosted)
-        $class | Add-Member -Name IsSingleton -MemberType NoteProperty -Value $($_.Singleton)
-        $class | Add-Member -Name Discovery -MemberType NoteProperty -Value (New-Object System.Collections.ArrayList)
-        $mp_classes.Add($class)  >$null 2>&1
+        $ManagementPack.Classes.Add((Parse-Class -Node $_)) > $null 2>&1
     }
+    
     #-----------------------------------------------------------------------------#
-
     #-----------------------------Collect Discoveries-----------------------------#
-        $mp.Monitoring.Discoveries.ChildNodes | ForEach-Object {
-        $discovery = New-Object object
-        $discovery | Add-Member -MemberType NoteProperty -Name ID -Value $_.ID
-        $discovery | Add-Member -MemberType NoteProperty -Name Enabled -Value $_.Enabled
-        $discovery | Add-Member -MemberType NoteProperty -Name Type -Value $_.DataSource.TypeID
-        $discovery | Add-Member -MemberType NoteProperty -Name Target -Value $_.Target
-
-        $configuration = @{}
-        foreach ($conf in $_.Datasource.ChildNodes) {
-
-            if (isSpecialCase($conf.LocalName))
-            {
-                handleSpecialCases -Configuration $configuration -Location $conf
-            }
-            else {
-                $configuration.Add($conf.LocalName,$($conf.InnerXml -replace "><",">`n<"))
-            }
-        }
-        $discovery | Add-Member -MemberType NoteProperty -Name "Configuration" -Value $configuration
-
+    $mp.Monitoring.Discoveries.ChildNodes | ForEach-Object {
+        $Discovery = Parse-Discovery -Node $_
         foreach ($i in $_.DiscoveryTypes.DiscoveryClass.TypeID) {
 
-            $mp_classes | Where-Object {$_.ID -eq $i} | ForEach-Object {$_.discovery.add($discovery)} > $null 2>&1
-        
+            $ManagementPack.Classes | Where-Object {$_.ID -eq $i} | ForEach-Object {
+                $_.discovery.add($Discovery) > $null 2>&1
+            }
         }
     }
+    
     #-----------------------------------------------------------------------------#
-
     #-------------------------------Collect Monitors------------------------------#
-    $mp_Monitors = New-Object System.Collections.ArrayList
-    $monitors = $mp.Monitoring.Monitors.ChildNodes
-    foreach ($id in $mp_classes.id) {
-        foreach ($mon in ($monitors | Where-Object {$_.Target -eq $id})){
-            $monitor = New-Object object
+    $ManagementPack | Add-Member -MemberType NoteProperty -Name Monitors -Value (New-Object System.Collections.ArrayList)
 
-            $monitor |Add-Member -MemberType NoteProperty -Name ID -Value $mon.ID
-            $monitor |Add-Member -MemberType NoteProperty -Name Enabled -Value $mon.Enabled
-            $monitor |Add-member -MemberType NoteProperty -Name Type -Value $mon.LocalName
-            $monitor |Add-Member -MemberType NoteProperty -Name MonitorType -Value $mon.TypeID
-            $monitor |Add-Member -MemberType NoteProperty -Name Category -Value $mon.Category
-            $monitor |Add-Member -MemberType NoteProperty -Name Target -Value $mon.Target
+    $mp.Monitoring.Monitors.ChildNodes | ForEach-Object {
+        $Monitor = Parse-Monitor -Node $_
 
-        
-            # Collect Alert Information
-            if ($null -ne $mon.AlertSettings.AlertOnState) {
-                $monitor |Add-Member -MemberType NoteProperty -Name Alerting -Value "true"
-                $monitor |Add-Member -MemberType NoteProperty -Name "Alert On State" -Value $mon.AlertSettings.AlertOnState
-                $monitor |Add-Member -MemberType NoteProperty -Name "Alert Priority" -Value $mon.AlertSettings.AlertPriority
-                $monitor |Add-Member -MemberType NoteProperty -Name "Alert Severity" -Value $mon.AlertSettings.AlertSeverity
-            }
-            else {
-                $monitor |Add-Member -MemberType NoteProperty -Name Alerting -Value "false"
-            }
-
-            # Collect Configuration
-            $configuration  = @{}
-            foreach ($config in $mon.Configuration.ChildNodes) {
-                if (isSpecialCase($config.LocalName)) {
-                    handleSpecialCases -Configuration $configuration -Location $config
-                } else {
-                    $configuration.Add($config.LocalName,$($config.InnerXml -replace "><",">`n<"))
-                }
-            }
-            $monitor | Add-Member -MemberType NoteProperty -Name Configuration -Value $configuration
-            $mp_Monitors.Add($monitor) >$null 2>&1
-        }
-
+        $ManagementPack.Monitors.add($Monitor) > $null 2>&1
     }
+
     #-----------------------------------------------------------------------------#
-
     #------------------------------Collect Rules----------------------------------#
-    $mp_Rules = New-Object System.Collections.ArrayList
-    $rules = $mp.Monitoring.Rules.ChildNodes
-    foreach ($id in $mp_classes.id) {
-        foreach ($rul in ($rules | where-object {$_.Target -eq $id})){
-            $rule = New-Object object
+    $ManagementPack | Add-Member -MemberType NoteProperty -Name Rules -Value (New-Object System.Collections.ArrayList)
 
-            $rule |Add-Member -MemberType NoteProperty -Name ID -Value $rul.ID
-            $rule |Add-Member -MemberType NoteProperty -Name Enabled -Value $rul.Enabled
-            $rule |Add-Member -MemberType NoteProperty -Name Category -Value $rul.Category
-            $rule |Add-Member -MemberType NoteProperty -Name Target -Value $rul.Target
+    $mp.Monitoring.Rules.ChildNodes | ForEach-Object  {
+        $Rule = Parse-Rule -Node $_
 
-            # Collect Datasources
-            $datasources = parseModule -ModuleType Datasource -Location $rul.DataSources
-            $rule | Add-Member -MemberType NoteProperty -Name DataSources -Value $datasources
-        
-            if ($null -ne $rul.ProbeActions) {
-                $probeactions = parseModule -ModuleType ProbeAction -Location $rul.ProbeActions
-                $rule | Add-Member -MemberType NoteProperty -Name ProbeActions -Value $probeactions
-            }
-
-            # Collect Condition Detection
-            if ($null -ne $rul.ConditionDetection) {
-                $conditiondetection = parseModule -ModuleType ConditionDetection -Location $rul.ConditionDetection
-                $rule | Add-Member -MemberType NoteProperty -Name ConditionDetection -Value $conditiondetection        
-            }
-        
-            # Collect Write Actions
-            $writeactions = parseModule -ModuleType WriteAction -Location $rul.WriteActions
-            $rule | Add-Member -MemberType NoteProperty -Name WriteActions -Value $writeactions
-
-            $mp_Rules.add($rule) >$null 2>&1
-        }
+        $ManagementPack.Rules.Add($Rule)  > $null 2>&1
     }
+
     #-----------------------------------------------------------------------------#
     #-------------------------Enrich From LanguagePacks---------------------------#
     $displaystrings = $mp.LanguagePacks.LanguagePack.DisplayStrings.ChildNodes | where-object {$_.SubElementID -eq $nul}
 
-    foreach ($class in $mp_classes) {
-        $class | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | where-object {$_.ElementID -eq $class.ID}).Name)
-    }
+    Add-DisplayNames -DisplayStrings $displaystrings -ListOfObjects $ManagementPack.Classes
 
-    foreach ($monitor in $mp_Monitors) {
-        $monitor | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | where-object {$_.ElementID -eq $monitor.ID}).Name)
-    }
+    Add-DisplayNames -DisplayStrings $displaystrings -ListOfObjects $ManagementPack.Rules
 
-    foreach ($rule in $mp_Rules) {
-        $rule | add-member -MemberType NoteProperty -Name DisplayName -Value $(($displaystrings | where-object {$_.ElementID -eq $rule.ID}).Name)
-    }
+    Add-DisplayNames -DisplayStrings $displaystrings -ListOfObjects $ManagementPack.Monitors
 
+    $ManagementPack
     #-----------------------------------------------------------------------------#
-    if ($Mode -eq "Report") {
-        $OutputFile = New-Item -ItemType File -Path "$OutputFolder\$($mp_ID).txt" -Force
+    #------------------------------Process Output---------------------------------#
 
-        write-report "$mp_Name"
-        write-report "$('=' * $mp_Name.Length)"
-        write-report ""
+    foreach ($outputMode in $Mode) {
+        Import-Module ".\Modules\Output Modules\$outputMode.ps*1" -ErrorAction Continue 1> $null
 
-        write-report "Dependencies"
-        write-report "$('-' * 12)"
+        write-$outputMode
 
-        $mp_dependencies | ForEach-Object {
-            write-report "$($_.ID),$($_.Version)"
-        }
-        write-report ""
-        write-report ""
-
-
-        write-report "Classes"
-        write-report "$('-' * 7)"
-        $i = 1
-        foreach ($class in $mp_classes) {
-            if ($class.IsAbstract -eq "True")
-            {
-                write-report "$i.`tName: $($class.DisplayName)"
-                write-report "$(' ' * ("$i".Length))  ID: $($class.ID)"
-                write-report "$(' ' * ("$i".Length))  Abstract: $($class.IsAbstract)"
-                $i++
-                write-report ""
-                continue
-            }
-            write-report "$i. Name: $($class.DisplayName)"
-            write-report "$(' ' * ("$i".Length))  ID: $($class.ID)"
-            $i++
-            write-report ""
-            if ($class.Discovery.count -ne 0) {
-                printHirarchy -Node $class -Mode Discovery -BaseLevel 1
-            } else {
-                write-report "`tDiscovery:"
-                write-report "`t$("-" *"Discovery:".length)"
-                write-report "`tNone"
-            }
-            write-report ""
-
-            if (($mp_Monitors | where-object {$_.target -eq $class.ID -and $_.Type -like "*Unit*"}).Count -ne 0 ) {
-                printHirarchy -Node ($mp_Monitors | where-object {$_.target -eq $class.ID}) -Mode Monitor -BaseLevel 1
-            }
-            else {
-                write-report "`tRelated Monitors:"
-                write-report "`t$("-" *"Related Monitors:".length)"
-                write-report "`t`None"
-            }
-            write-report ""
-    
-            if (($mp_Rules | where-object {$_.target -eq $class.ID}).Count -ne 0 ) {
-
-                printHirarchy -Node ($mp_Rules | where-object {$_.target -eq $class.ID}) -Mode Rule -BaseLevel 1
-            }
-            else {
-                write-report "`tRelated Rules:"
-                write-report "`t$("-" *"Related Rules:".length)"
-                write-report "`t`None"
-            }
-            write-report ""
-
-        }
-    } elseif ($Mode -eq "Table") {
-        $ChecklistFolder = New-Item -ItemType Directory -Path "$OutputFolder\$($mp_ID)" -Force
-
-        if ($mp_Monitors.Count -ne 0) {
-            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).monitors.csv" -Force
-            $mp_Monitors | select-object @{NAme="ManagementPack";Expression={$($mp_ID)}},displayName,target,Enabled,Alerting,'Alert Priority','Alert Severity' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
-        }
-
-        if ($mp_Rules.Count -ne 0) {
-            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).rules.csv" -Force
-            foreach ($rule in $mp_Rules) {
-                if ($rule.WriteActions.type -like "*GenerateAlert") {
-                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "true"
-                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Priority' -Value $rule.WriteActions.Configuration.Priority
-                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Severity' -Value $rule.WriteActions.Configuration.Severity
-                }
-                else {
-                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "false"
-                }
-            }
-            $mp_Rules | Select-Object  @{NAme="ManagementPack";Expression={$($mp_ID)}},displayName,target,Enabled,Alerting,'Alert Priority','Alert Severity' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
-        }
-    
-    } elseif ($Mode -eq "CheckList") {
-        $ChecklistFolder = New-Item -ItemType Directory -Path "$OutputFolder\$($mp_ID)" -Force
-
-        if ($mp_Monitors.Count -ne 0) {
-            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).monitors.csv" -Force
-            $mp_Monitors | select-object -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
-        }
-
-        if ($mp_Rules.Count -ne 0) {
-            $OutputFile = New-Item -ItemType File -Path "$ChecklistFolder\$($mp_ID).rules.csv" -Force
-            foreach ($rule in $mp_Rules) {
-                if ($rule.WriteActions.type -like "*GenerateAlert") {
-                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "true"
-                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Priority' -Value $rule.WriteActions.Configuration.Priority
-                    $rule | Add-Member -MemberType NoteProperty -Name 'Alert Severity' -Value $rule.WriteActions.Configuration.Severity
-                }
-                else {
-                    $rule | Add-Member -MemberType NoteProperty -Name Alerting -Value "false"
-                }
-            }
-            $mp_Rules | select-object -Property displayName,Enabled,Alerting,'Alert Priority','Alert Severity','Status' | convertto-csv -NoTypeInformation | Out-File -FilePath $OutputFile -Force
-        }
+        Remove-Module $outputMode
     }
 }
