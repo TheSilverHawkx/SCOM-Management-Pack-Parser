@@ -8,10 +8,10 @@ Param (
     [Parameter(Position = 1, Mandatory = $true,ParameterSetName= "FileScenario")]
     [Parameter(Position = 1,ParameterSetName= "FolderScenario")]
     [ArgumentCompleter(
-        {((get-childitem -Path "Modules\Output Modules" -Filter "*.ps*1").name.split('.')[0])}
+        {(get-childitem -Path "Modules\Output Modules" -Filter "*.ps*1").Basename}
         )]
     [ValidateScript(
-            { $_ -in $((get-childitem -Path "Modules\Output Modules" -Filter "*.ps*1").name.split('.')[0]) }
+            { $_ -in $(get-childitem -Path "Modules\Output Modules" -Filter "*.ps*1").Basename }
         )]
     [string[]]$Mode = "Report",
 
