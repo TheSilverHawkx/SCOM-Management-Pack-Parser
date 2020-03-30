@@ -57,6 +57,7 @@ Example:
 Note that only -File **or** -Folder could be present
 
 #### -Mode <string\>
+Also known as Output Module, refers to how to output your parsed Management Pack.
 Currently there are 3 modes:
 
  - **Report**: Creates a formatted text file (refer to 'Report.txt' under Output Examples)
@@ -106,4 +107,26 @@ Here's the process:
 This Process can take up to an hour or so (took 40 minutes for 350 Management Packs).
 
 ## Known Bugs
-* Classes with Comments won't parse correctly 
+None, please report if you find something.
+
+## Creating Your Own Output Modules
+Since v2 I have refactored the script be much more modular.
+Each piece of code has it's own module and therefore you can integrate your own modules.
+
+To create your own module:
+1. Create a function named "write-[action]" which receive 2 parameters:
+   1. [object]$Managementpack - Management Pack Object
+   2. [string]$WorkDirectory - Output Folder variable
+
+2.  Write your function, you can look that the existing modules under "Output Modules" for reference.
+3. Add the following code under your function:
+
+    Export-ModuleMember  -Function write-[action]
+
+4. Save you function under your local "Output Modules" directory with the name [action].psm1
+
+Afterwards run the script as following:
+
+    & 'MP Parser.ps1' -Folder C:\MPs -Mode [action] -OutputFolder C:\MPs\Parsed
+
+Feel free to contact me if you run into problems.
